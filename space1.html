@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cosmic Glitch Cube</title>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.158.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.158.0/examples/jsm/"
+            }
+        }
+    </script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #000;
+            font-family: 'Arial', sans-serif;
+        }
+        #container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+        #info {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: rgba(255, 255, 255, 0.8);
+            text-align: center;
+            z-index: 10;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 10px 20px;
+            border-radius: 20px;
+            backdrop-filter: blur(5px);
+            font-size: 18px;
+            letter-spacing: 1px;
+        }
+        #controls {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .control-btn {
+            background: rgba(0, 150, 255, 0.2);
+            border: 1px solid rgba(0, 200, 255, 0.5);
+            color: white;
+            padding: 8px 15px;
+            border-radius: 20px;
+            cursor: pointer;
+            backdrop-filter: blur(5px);
+            transition: all 0.3s;
+            font-weight: bold;
+            outline: none;
+        }
+        .control-btn:hover {
+            background: rgba(0, 200, 255, 0.5);
+        }
+        .control-btn.active {
+            background: rgba(0, 200, 255, 0.7);
+            box-shadow: 0 0 10px rgba(0, 200, 255, 0.5);
+        }
+        .glitch-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 5;
+            opacity: 0;
+            transition: opacity 0.5s;
+        }
+        .stars {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+        }
+        .star {
+            position: absolute;
+            background: white;
+            border-radius: 50%;
+            animation: twinkle var(--duration) infinite ease-in-out;
+            animation-delay: var(--delay);
+        }
+        @keyframes twinkle {
+            0%, 100% { opacity: 0.2; transform: scale(0.8); }
+            50% { opacity: 1; transform: scale(1.2); }
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="controls">
+            <button class="control-btn" id="glitchBtn">GLITCH ON</button>
+            <button class="control-btn" id="bloomBtn">BLOOM ON</button>
+            <button class="control-btn" id="trailBtn">TRAIL ON</button>
+            <button class="control-btn" id="shimmerBtn">SHIMMER ON</button>
+        </div>
+        <div id="info">COSMIC GLITCH CUBE</div>
+        <div class="glitch-overlay" id="staticOverlay"></div>
+        <div class="glitch-overlay" id="lineOverlay"></div>
+        <div class="stars" id="stars"></div>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+        import { GlitchPass } from 'three/addons/postprocessing/GlitchPass.js';
+        import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+        import { CopyShader } from 'three/addons/shaders/CopyShader.js';
+        import { AfterimageShader } from 'three/addons/shaders/AfterimageShader.js';
+
+        // Create starfield background
+        function createStars() {
+            const container = document.getElementById('stars');
+            const starCount = 500;
+            
+            for (let i = 0; i < starCount; i++) {
+                const star = document.createElement('div');
+                star.className = 'star';
+                
+                const size = Math.random() * 3;
+                const x = Math.random() * 100;
+                const y = Math.random() * 100;
+                const duration = 2 + Math.random() * 8;
+                const delay = Math.random() * 5;
+                
+                star.style.width = `${size}px`;
+                star.style.height = `${size}px`;
+                star.style.left = `${x}%`;
+                star.style.top = `${y}%`;
+                star.style.setProperty('--duration', `${duration}s`);
+                star.style.setProperty('--delay', `${delay}s`);
+                
+                container.appendChild(star);
+            }
+        }
+
+        // Add glitch overlays
+        function addGlitchOverlays() {
+            const staticOverlay = document.getElementById('staticOverlay');
+            const lineOverlay = document.getElementById('lineOverlay');
+            
+            // Create static overlay
+            const canvas = document.createElement('canvas');
+            canvas.width = 512;
+            canvas.height = 512;
+            const ctx = canvas.getContext('2d');
+            
+            const imageData = ctx.createImageData(canvas.width, canvas.height);
+            const data = imageData.data;
+            
+            for (let i = 0; i < data.length; i += 4) {
+                if (Math.random() > 0.98) {
+                    data[i] = 255;
+                    data[i + 1] = 255;
+                    data[i + 2] = 255;
+                    data[i + 3] = Math.random() * 255;
+                }
+            }
+            
+            ctx.putImageData(imageData, 0, 0);
+            staticOverlay.style.background = `url(${canvas.toDataURL()})`;
+            staticOverlay.style.opacity = '0.05';
+            
+            // Create scan lines overlay
+            const lineCanvas = document.createElement('canvas');
+            lineCanvas.width = 2;
+            lineCanvas.height = 512;
+            const lineCtx = lineCanvas.getContext('2d');
+            
+            const gradient = lineCtx.createLinearGradient(0, 0, 0, lineCanvas.height);
+            gradient.addColorStop(0, 'rgba(0, 255, 255, 0)');
+            gradient.addColorStop(0.1, 'rgba(0, 255, 255, 0.1)');
+            gradient.addColorStop(0.2, 'rgba(0, 255, 255, 0)');
+            
+            lineCtx.fillStyle = gradient;
+            lineCtx.fillRect(0, 0, lineCanvas.width, lineCanvas.height);
+            
+            lineOverlay.style.background = `repeat-x url(${lineCanvas.toDataURL()})`;
+            lineOverlay.style.opacity = '0.3';
+            lineOverlay.style.animation = 'scan 8s linear infinite';
+            
+            const style = document.createElement('style');
+            style.textContent = `
+                @keyframes scan {
+                    0% { background-position: 0 0; }
+                    100% { background-position: 0 100%; }
+                }
+                @keyframes glitch {
+                    0% { transform: translate(0); }
+                    20% { transform: translate(-3px, 3px); }
+                    40% { transform: translate(-3px, -3px); }
+                    60% { transform: translate(3px, 3px); }
+                    80% { transform: translate(3px, -3px); }
+                    100% { transform: translate(0); }
+                }
+                .glitch-active { animation: glitch 0.2s infinite; }
+                .shimmer-active { filter: drop-shadow(0 0 10px cyan) drop-shadow(0 0 20px magenta); }
+            `;
+            document.head.appendChild(style);
+        }
+
+        // Create nebula texture
+        function createNebulaTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 512;
+            canvas.height = 512;
+            const ctx = canvas.getContext('2d');
+            
+            // Gradient background
+            const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+            const colors = ['#0f0c29', '#302b63', '#24243e', '#6a11cb', '#2575fc', '#1fa2ff'];
+            gradient.addColorStop(0, colors[Math.floor(Math.random() * colors.length)]);
+            gradient.addColorStop(0.5, colors[Math.floor(Math.random() * colors.length)]);
+            gradient.addColorStop(1, colors[Math.floor(Math.random() * colors.length)]);
+            
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Add cosmic noise
+            for (let i = 0; i < 5000; i++) {
+                const x = Math.random() * canvas.width;
+                const y = Math.random() * canvas.height;
+                const radius = Math.random() * 10;
+                const alpha = Math.random() * 0.1;
+                const color = `hsla(${Math.random() * 360}, 100%, 50%, ${alpha})`;
+                
+                ctx.beginPath();
+                ctx.arc(x, y, radius, 0, Math.PI * 2);
+                ctx.fillStyle = color;
+                ctx.fill();
+            }
+            
+            return new THREE.CanvasTexture(canvas);
+        }
+
+        // Main Three.js setup
+        function init() {
+            createStars();
+            addGlitchOverlays();
+            
+            const container = document.getElementById('container');
+            
+            // Scene setup
+            const scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x000000);
+            scene.fog = new THREE.FogExp2(0x000011, 0.002);
+            
+            // Camera setup
+            const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.z = 15;
+            
+            // Renderer setup
+            const renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            container.appendChild(renderer.domElement);
+            
+            // Post-processing setup
+            const composer = new EffectComposer(renderer);
+            const renderPass = new RenderPass(scene, camera);
+            composer.addPass(renderPass);
+            
+            // Bloom effect
+            const bloomPass = new UnrealBloomPass(
+                new THREE.Vector2(window.innerWidth, window.innerHeight),
+                1.5, 0.4, 0.85
+            );
+            bloomPass.enabled = false;
+            composer.addPass(bloomPass);
+            
+            // Glitch effect
+            const glitchPass = new GlitchPass();
+            glitchPass.enabled = false;
+            composer.addPass(glitchPass);
+            
+            // Afterimage (trail) effect
+            const trailPass = new ShaderPass(AfterimageShader);
+            trailPass.uniforms['damp'].value = 0.96;
+            trailPass.enabled = false;
+            composer.addPass(trailPass);
+            
+            // Output pass (required for final render)
+            const outputPass = new OutputPass();
+            composer.addPass(outputPass);
+            
+            // Controls
+            const controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.screenSpacePanning = false;
+            controls.maxPolarAngle = Math.PI;
+            controls.minDistance = 5;
+            controls.maxDistance = 50;
+            
+            // Create cosmic cube
+            const cubeSize = 5;
+            
+            // Cube geometry
+            const geometry = new THREE.BoxGeometry(cubeSize, cubeSize, cubeSize);
+            
+            // Create 6 unique nebula textures for each face
+            const materials = [];
+            for (let i = 0; i < 6; i++) {
+                materials.push(new THREE.MeshStandardMaterial({
+                    map: createNebulaTexture(),
+                    emissive: new THREE.Color(0x0abdc6).multiplyScalar(0.5),
+                    emissiveIntensity: 0.5,
+                    roughness: 0.7,
+                    metalness: 0.3,
+                    side: THREE.DoubleSide,
+                    transparent: true,
+                    opacity: 0.9
+                }));
+            }
+            
+            // Main cube
+            const cube = new THREE.Mesh(geometry, materials);
+            scene.add(cube);
+            
+            // Wireframe around cube
+            const wireframe = new THREE.LineSegments(
+                new THREE.EdgesGeometry(geometry),
+                new THREE.LineBasicMaterial({ 
+                    color: 0x00ffff, 
+                    transparent: true, 
+                    opacity: 0.8,
+                    linewidth: 1.5 
+                })
+            );
+            wireframe.position.copy(cube.position);
+            wireframe.scale.multiplyScalar(1.01);
+            scene.add(wireframe);
+            
+            // Inner glow cube
+            const innerGlow = new THREE.Mesh(
+                new THREE.BoxGeometry(cubeSize * 0.9, cubeSize * 0.9, cubeSize * 0.9),
+                new THREE.MeshBasicMaterial({
+                    color: 0x00ffff,
+                    transparent: true,
+                    opacity: 0.1,
+                    wireframe: false
+                })
+            );
+            scene.add(innerGlow);
+            
+            // Removed particle system - no more square stars around cube
+            
+            // Lights
+            const ambientLight = new THREE.AmbientLight(0x404040, 0.5);
+            scene.add(ambientLight);
+            
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+            directionalLight.position.set(1, 1, 1);
+            scene.add(directionalLight);
+            
+            const pointLight1 = new THREE.PointLight(0x00ffff, 1, 20);
+            pointLight1.position.set(3, 3, 3);
+            scene.add(pointLight1);
+            
+            const pointLight2 = new THREE.PointLight(0xff00ff, 1, 20);
+            pointLight2.position.set(-3, -3, -3);
+            scene.add(pointLight2);
+            
+            // Control buttons
+            const glitchBtn = document.getElementById('glitchBtn');
+            const bloomBtn = document.getElementById('bloomBtn');
+            const trailBtn = document.getElementById('trailBtn');
+            const shimmerBtn = document.getElementById('shimmerBtn');
+            const staticOverlay = document.getElementById('staticOverlay');
+            const lineOverlay = document.getElementById('lineOverlay');
+            
+            glitchBtn.addEventListener('click', () => {
+                glitchPass.enabled = !glitchPass.enabled;
+                glitchBtn.classList.toggle('active');
+                
+                if (glitchPass.enabled) {
+                    staticOverlay.style.opacity = '0.15';
+                    lineOverlay.style.opacity = '0.5';
+                } else {
+                    staticOverlay.style.opacity = '0.05';
+                    lineOverlay.style.opacity = '0.1';
+                }
+            });
+            
+            bloomBtn.addEventListener('click', () => {
+                bloomPass.enabled = !bloomPass.enabled;
+                bloomBtn.classList.toggle('active');
+            });
+            
+            trailBtn.addEventListener('click', () => {
+                trailPass.enabled = !trailPass.enabled;
+                trailBtn.classList.toggle('active');
+            });
+            
+            shimmerBtn.addEventListener('click', () => {
+                cube.material.forEach(mat => {
+                    if (mat.emissiveIntensity === 0.5) {
+                        mat.emissiveIntensity = 2;
+                        mat.emissive.set(0xffffff);
+                    } else {
+                        mat.emissiveIntensity = 0.5;
+                        mat.emissive.set(0x0abdc6);
+                    }
+                });
+                shimmerBtn.classList.toggle('active');
+                cube.classList.toggle('shimmer-active');
+            });
+            
+            // Auto-rotate and animation
+            let time = 0;
+            controls.autoRotate = true;
+            controls.autoRotateSpeed = 1.5;
+            
+            function animate() {
+                requestAnimationFrame(animate);
+                
+                time += 0.01;
+                
+                cube.rotation.x = time * 0.2;
+                cube.rotation.y = time * 0.3;
+                
+                wireframe.rotation.copy(cube.rotation);
+                innerGlow.rotation.copy(cube.rotation);
+                // Removed particle rotation reference
+                
+                // Random glitch effects when active
+                if (glitchPass.enabled) {
+                    if (Math.random() > 0.9) {
+                        cube.scale.set(
+                            0.95 + Math.random() * 0.1,
+                            0.95 + Math.random() * 0.1,
+                            0.95 + Math.random() * 0.1
+                        );
+                    }
+                }
+                
+                controls.update();
+                composer.render();
+            }
+            
+            // Window resize handler
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+                composer.setSize(window.innerWidth, window.innerHeight);
+            });
+            
+            animate();
+        }
+        
+        init();
+    </script>
+</body>
+</html>
